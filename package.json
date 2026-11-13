@@ -1,0 +1,102 @@
+{
+  "name": "boards-desktop",
+  "productName": "Boards",
+  "version": "0.1.0",
+  "description": "Gestor de proyectos y pizarras de escritorio con el motor de dibujo de Excalidraw",
+  "author": "Isaías Méndez",
+  "license": "MIT",
+  "private": true,
+  "main": "out/main/index.js",
+  "scripts": {
+    "fonts": "node scripts/copy-fonts.mjs",
+    "dev": "pnpm run fonts && electron-vite dev",
+    "dev:x11": "pnpm run fonts && BOARDS_FORCE_X11=1 electron-vite dev",
+    "build": "pnpm run fonts && pnpm run notices && electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist": "pnpm run build && electron-builder --linux",
+    "dist:dir": "pnpm run build && electron-builder --linux --dir",
+    "install:local": "pnpm run dist:dir && sh scripts/install-local.sh",
+    "notices": "node scripts/generate-licenses.mjs"
+  },
+  "devDependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
+    "@types/node": "22",
+    "@types/react": "19",
+    "@types/react-dom": "19",
+    "@vitejs/plugin-react": "6",
+    "electron": "45",
+    "electron-builder": "26",
+    "electron-vite": "6",
+    "lucide-react": "^1.72.0",
+    "react": "19",
+    "react-dom": "19",
+    "typescript": "5.9",
+    "vite": "8"
+  },
+  "build": {
+    "appId": "dev.experiencev.boards",
+    "productName": "Boards",
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
+    },
+    "files": [
+      "out/**/*",
+      "resources/icon.png",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "pacman"
+      ],
+      "category": "Graphics",
+      "executableName": "boards",
+      "icon": "resources/icons",
+      "desktop": {
+        "entry": {
+          "Name": "Boards",
+          "GenericName": "Pizarras",
+          "Comment": "Proyectos y pizarras con el motor de Excalidraw",
+          "StartupWMClass": "boards",
+          "Keywords": "whiteboard;pizarra;dibujo;excalidraw;"
+        }
+      }
+    },
+    "electronLanguages": [
+      "es",
+      "es-419",
+      "en-US"
+    ],
+    "asarUnpack": [
+      "resources/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "LICENSE",
+        "to": "licenses/LICENSE"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.md",
+        "to": "licenses/THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "THIRD_PARTY_LICENSES.txt",
+        "to": "licenses/THIRD_PARTY_LICENSES.txt"
+      },
+      {
+        "from": "licenses/OFL-1.1.txt",
+        "to": "licenses/OFL-1.1.txt"
+      }
+    ]
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
+  },
+  "packageManager": "pnpm@9.15.9",
+  "desktopName": "boards.desktop"
+}
