@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+
+# Copied from @excalidraw/excalidraw at build time (pnpm fonts)
+src/renderer/public/fonts/
+
+# Logs and local files
+*.log
+.env
+.env.*
+.DS_Store
+.vscode/
+.idea/
