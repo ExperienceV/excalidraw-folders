@@ -1,0 +1,10 @@
+[package]
+name = "pizarra-core"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+glam = "0.34.3"
+kurbo = "0.13.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"

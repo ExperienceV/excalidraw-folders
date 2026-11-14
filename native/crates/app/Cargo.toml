@@ -1,0 +1,10 @@
+[package]
+name = "pizarra-app"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+pizarra-core = { version = "0.1.0", path = "../core" }
+pollster = "1.0.1"
+vello = "0.12.0"
+winit = "0.30.13"
