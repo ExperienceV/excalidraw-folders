@@ -1,125 +1,131 @@
-# Boards
+# Boards — Gestor de proyectos y pizarras
 
-**English** · [Español](README.es.md)
+> **Rama `Manager`:** Esta rama contiene el gestor de proyectos y pizarras de escritorio construido con **Electron**, **React** y el motor de dibujo de [Excalidraw](https://github.com/excalidraw/excalidraw) (`@excalidraw/excalidraw`). A diferencia de la rama `native-engine` (que implementa un motor vectorial nativo en Rust sin Chromium), aquí el foco está en la **organización por proyectos, gestión local de archivos `.excalidraw`, miniaturas, autoguardado y flujo de escritorio completo**.
 
-A desktop app to organize whiteboards into projects, built on the
-[Excalidraw](https://github.com/excalidraw/excalidraw) drawing engine and Electron.
-Everything stays on your machine as standard `.excalidraw` files.
+## Capturas
 
-![Project manager](docs/screenshots/manager-light.png)
+### Gestor de proyectos (tema claro)
+![Gestor de proyectos en tema claro](docs/screenshots/manager-light.png)
 
-![Board editor](docs/screenshots/editor-light.png)
+### Editor de pizarras (tema claro)
+![Editor de pizarras en tema claro](docs/screenshots/editor-light.png)
 
 <details>
-<summary>Dark theme</summary>
+<summary>Capturas en tema oscuro</summary>
 
-![Project manager, dark](docs/screenshots/manager-dark.png)
-![Board editor, dark](docs/screenshots/editor-dark.png)
+![Gestor de proyectos en tema oscuro](docs/screenshots/manager-dark.png)
+![Editor de pizarras en tema oscuro](docs/screenshots/editor-dark.png)
 
 </details>
 
-## Features
+## Arquitectura
 
-- **Projects and boards**: colored projects, board thumbnails, search and a "recent" view.
-- Rename, duplicate, move between projects, delete, and import/export `.excalidraw` files.
-- **Autosave** to local files, plus a save when you go back to the list or close the window.
-- **Works offline**: Excalidraw's fonts ship with the app instead of loading from a CDN.
-- **Pen pressure**: Chromium passes the tablet's real `PointerEvent.pressure` to Excalidraw,
-  so freehand strokes vary in width. A live pressure meter appears in the editor's top bar
-  as soon as you use a pen.
-- A trimmed-down Excalidraw menu: no collaboration, no "open file", no "save as".
-- Light, dark or system theme.
+El código propio de la aplicación (~1.675 líneas de TypeScript) se divide en proceso principal, puente seguro (`preload`), interfaz en React y tipos compartidos:
 
-The interface is in Spanish for now. Translations are a welcome contribution.
+```text
+.
+├── electron.vite.config.ts
+├── package.json
+├── scripts/
+│   ├── copy-fonts.mjs             # Copia fuentes locales de Excalidraw para uso sin conexión
+│   ├── generate-licenses.mjs      # Genera THIRD_PARTY_LICENSES.txt en cada build
+│   └── install-local.sh           # Instala la app compilada para el usuario actual en Linux
+├── resources/
+│   ├── icon.svg                   # Ícono fuente
+│   └── icons/                     # PNGs en múltiples resoluciones (16x16 a 512x512)
+└── src/
+    ├── shared/
+    │   └── types.ts               # Modelos Project, Board, Workspace y contrato BoardsApi
+    ├── preload/
+    │   └── index.ts               # Expone window.boards vía contextBridge (sin Node en renderer)
+    ├── main/
+    │   ├── index.ts               # Ventana, protocolo app://, bloqueo de CDN, IPC y flush al cerrar
+    │   └── store.ts               # WorkspaceStore: índice JSON atómico, escenas y miniaturas
+    └── renderer/
+        ├── index.html
+        └── src/
+            ├── App.tsx            # Alterna entre ProjectManager y BoardEditor, y gestiona el tema
+            ├── theme.ts           # Preferencia de tema (claro, oscuro o sistema)
+            ├── format.ts          # Utilidades de formato y tiempo relativo
+            ├── styles.css         # Estilos del gestor y variables CSS
+            └── components/
+                ├── ProjectManager.tsx  # Barra lateral de proyectos, recientes, búsqueda y tarjetas
+                ├── BoardEditor.tsx     # Wrapper de Excalidraw, autoguardado, miniaturas y menú
+                ├── PenStatus.tsx       # Medidor en vivo de presión del lápiz (PointerEvent.pressure)
+                ├── Dialogs.tsx         # Diálogos modales de creación, renombrado, color y confirmación
+                └── Menu.tsx            # Menú contextual para proyectos y pizarras
+```
 
-## Project status
+## Cómo funciona el gestor
 
-This is a working base meant to be forked and extended. It is built and tested on **Linux**
-(Arch, Wayland/niri). Electron runs on Windows and macOS too, but the build config and
-testing currently cover Linux only.
+### 1. Organización por proyectos y pizarras
+- **Proyectos con color:** cada proyecto agrupa pizarras y tiene un color identificativo configurable desde una paleta predefinida. Puedes crear, renombrar, cambiar de color y eliminar proyectos.
+- **Vista de recientes:** muestra hasta las **24 pizarras** modificadas más recientemente entre todos los proyectos, ordenadas por `updatedAt`.
+- **Búsqueda instantánea:** filtra pizarras por nombre dentro del proyecto seleccionado o en la vista de recientes.
+- **Acciones sobre pizarras:** crear, abrir, renombrar, duplicar (copiando escena y miniatura), mover entre proyectos y eliminar.
+- **Importar y exportar `.excalidraw`:** importa uno o varios archivos `.excalidraw` hacia un proyecto o exporta cualquier pizarra al disco con diálogo nativo.
 
-## Getting started
+### 2. Almacenamiento local (`WorkspaceStore`)
+Toda la información se guarda en el directorio de datos de usuario (`~/.config/Boards/workspace/` en Linux), accesible directamente desde el botón **«Carpeta de datos»**:
 
-Requires Node ≥ 20.19 and [pnpm](https://pnpm.io) (`corepack enable`).
+```text
+workspace.json             # Índice con proyectos, colores, fechas y lista de pizarras
+boards/<id>.excalidraw     # Escenas en formato estándar de Excalidraw
+thumbnails/<id>.png        # Miniaturas PNG para las tarjetas del gestor
+library.excalidrawlib      # Biblioteca de formas compartida entre pizarras
+```
+
+- **Escrituras atómicas y serializadas:** `WorkspaceStore` encadena las mutaciones en una cola interna y escribe `workspace.json` mediante archivos temporales + `rename` para evitar corrupción ante cierres inesperados. Si el índice estuviera dañado, conserva una copia `.corrupt-<timestamp>` antes de regenerarlo.
+- **Compatibilidad total:** cualquier archivo en `boards/<id>.excalidraw` se puede abrir directamente en [excalidraw.com](https://excalidraw.com) o en el motor nativo de la rama `native-engine`.
+
+### 3. Editor integrado, autoguardado y miniaturas
+- **Autoguardado continuo:** `BoardEditor` serializa la escena (`serializeAsJSON`) con un *debounce* de **700 ms** tras cada cambio, y fuerza el guardado al volver al gestor o al cerrar la ventana (el proceso principal envía `app:flush` y espera hasta `3000 ms` la confirmación `app:flushed`).
+- **Miniaturas automáticas:** exporta vistas previas PNG (`maxWidthOrHeight: 640`) cada **5 segundos** durante la edición y al cerrar la pizarra; si el lienzo queda vacío, elimina la miniatura anterior.
+- **Menú adaptado:** oculta opciones que no aplican al flujo del gestor (colaboración, «abrir archivo» o «guardar como» desde el menú de Excalidraw) y añade botón de regreso al gestor y exportación rápida.
+- **Biblioteca compartida:** los elementos guardados en la biblioteca de Excalidraw se persisten en `library.excalidrawlib` y están disponibles en todas las pizarras.
+
+### 4. Funcionamiento sin conexión y seguridad
+- **Protocolo `app://` y bloqueo de CDN:** la interfaz se sirve desde `app://boards/index.html` con aislamiento de contexto (`contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`). Las fuentes de Excalidraw se copian al paquete con `scripts/copy-fonts.mjs` y cualquier petición a `https://esm.sh/*` es cancelada en `main`.
+- **Enlaces externos:** los enlaces dentro de las pizarras se abren en el navegador del sistema y nunca navegan dentro de la ventana de la app.
+
+### 5. Presión del lápiz y tema
+- **Presión de tableta:** Chromium pasa `PointerEvent.pressure` a Excalidraw para variar el grosor en trazos a mano alzada; `PenStatus` muestra un indicador en vivo en la barra superior en cuanto detecta un lápiz.
+- **Wayland / XWayland:** en Linux corre nativo en Wayland; si el compositor no entrega presión de tableta, puede forzarse XWayland con `BOARDS_FORCE_X11=1`.
+- **Tema:** configurable entre claro, oscuro o seguir al sistema.
+
+## Requisitos, desarrollo y compilación
+
+Requiere **Node ≥ 20.19** y **pnpm** (`corepack enable`).
 
 ```bash
+# Instalar dependencias
 pnpm install
-pnpm dev            # run with hot reload
+
+# Ejecutar en modo desarrollo (copia fuentes + electron-vite dev)
+pnpm dev
+
+# Ejecutar en desarrollo forzando X11/XWayland (útil para presión de lápiz)
+pnpm dev:x11
+
+# Verificar tipos TypeScript
 pnpm typecheck
 ```
 
-### Building
+### Empaquetado e instalación local (Linux)
 
 ```bash
-pnpm dist           # AppImage + pacman package in dist/
-pnpm dist:dir       # unpacked build only (faster)
-pnpm install:local  # build and install for the current user (Linux, no root)
+# Generar AppImage y paquete pacman en dist/
+pnpm dist
+
+# Generar solo la carpeta desempaquetada (más rápido)
+pnpm dist:dir
+
+# Compilar e instalar para el usuario actual (~/.local/opt/boards y comando `boards`)
+pnpm install:local
 ```
 
-`install:local` copies the app to `~/.local/opt/boards` and creates the `boards` command
-(`~/.local/bin`), a `boards.desktop` entry and icons under `~/.local/share`. The window
-identifies itself as `boards` (Wayland app_id / X11 WM_CLASS), so taskbars and launchers
-match it to its icon. Run it again after making changes.
+`install:local` instala el binario en `~/.local/opt/boards`, crea el lanzador `~/.local/bin/boards`, registra `boards.desktop` (`StartupWMClass=boards`) y copia los íconos en `~/.local/share`.
 
-## Where your data lives
+## Licencia
 
-Everything is stored in `~/.config/Boards/workspace/` (the "Carpeta de datos" button opens it):
-
-```
-workspace.json             project and board index
-boards/<id>.excalidraw     scenes, in the standard Excalidraw format
-thumbnails/<id>.png        board previews
-library.excalidrawlib      shape library
-```
-
-Board files open as-is on [excalidraw.com](https://excalidraw.com).
-
-## Pen pressure on Wayland
-
-Electron runs natively on Wayland, where pen pressure depends on the compositor's tablet
-protocol support. If the pressure meter doesn't appear or stays still, run the app under
-XWayland, where pressure goes through XInput2:
-
-```bash
-BOARDS_FORCE_X11=1 boards   # installed app
-pnpm dev:x11                # development
-```
-
-## Customizing
-
-The app's own code is small (~1,700 lines of TypeScript). Good places to start:
-
-| You want to… | Look at |
-| --- | --- |
-| Show or hide Excalidraw features and menu items | `UIOptions` and `<MainMenu>` in `src/renderer/src/components/BoardEditor.tsx` |
-| Change autosave or thumbnail behavior | `save` / `handleChange` in `BoardEditor.tsx` |
-| Change how projects and boards are stored | `src/main/store.ts` |
-| Add an operation the UI can call | `BoardsApi` in `src/shared/types.ts`, then `src/preload/index.ts` and `registerIpc()` in `src/main/index.ts` |
-| Restyle the project manager | `src/renderer/src/styles.css` (CSS variables at the top) |
-
-```
-src/main/        main process: window, app:// protocol, IPC, storage
-src/preload/     secure bridge (contextBridge) exposed as window.boards
-src/renderer/    React: project manager and editor
-src/shared/      shared types
-resources/       app icon (icon.svg is the source)
-scripts/         font copy, license generation, local install
-```
-
-The UI is served from a custom `app://` protocol, with a strict Content Security Policy
-in production builds. The renderer runs sandboxed with context isolation, and links open
-in the system browser.
-
-To regenerate the icon PNGs after editing `resources/icon.svg`:
-
-```bash
-for n in 16 24 32 48 64 128 256 512; do rsvg-convert -w $n -h $n resources/icon.svg -o resources/icons/${n}x${n}.png; done
-cp resources/icons/512x512.png resources/icon.png
-```
-
-## License
-
-[MIT](LICENSE). Boards is an independent project and is not affiliated with Excalidraw.
-Third-party code and fonts are credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md);
-full license texts for every bundled library are in
-[THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt), regenerated on each build.
+[MIT](LICENSE). Boards es un proyecto independiente y no está afiliado a Excalidraw. Las atribuciones y licencias de terceros se incluyen en [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) y [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt).
