@@ -1,125 +1,70 @@
-# Boards
+# Board
 
-**English** · [Español](README.es.md)
+> **Motor basado en Excalidraw:** Este proyecto es un motor de dibujo vectorial nativo en **Rust** basado en [Excalidraw](https://github.com/excalidraw/excalidraw) (MIT). Reproduce su diseño, estética *hand-drawn*, comportamiento de herramientas y compatibilidad con el formato `.excalidraw`, portando algoritmos de [rough.js](https://github.com/rough-stuff/rough) y [perfect-freehand](https://github.com/steveruizok/perfect-freehand) para ejecutarse directamente en GPU sin navegador, Electron ni Chromium.
 
-A desktop app to organize whiteboards into projects, built on the
-[Excalidraw](https://github.com/excalidraw/excalidraw) drawing engine and Electron.
-Everything stays on your machine as standard `.excalidraw` files.
+## Capturas
 
-![Project manager](docs/screenshots/manager-light.png)
+### Editor y herramientas
+![Interfaz del editor con barra de herramientas, panel de estilos, figuras, flecha anclada y edición de texto](docs/screenshots/editor-ui.png)
 
-![Board editor](docs/screenshots/editor-light.png)
+### Trazos con presión de lápiz (Wayland)
+![Trazos libres con presión real de tableta gráfica en Wayland](docs/screenshots/pen-pressure.png)
 
-<details>
-<summary>Dark theme</summary>
+### Renderizado de `samples/demo.excalidraw`
+![Exportación a PNG de samples/demo.excalidraw mostrando rellenos hachure, cross-hatch, solid, trazos punteados, flechas curvas y rotación](docs/screenshots/demo-render.png)
 
-![Project manager, dark](docs/screenshots/manager-dark.png)
-![Board editor, dark](docs/screenshots/editor-dark.png)
+## Arquitectura
 
-</details>
+```text
+.
+├── Cargo.toml
+├── crates/
+│   ├── core/                # board-core: núcleo puro sin ventana, GPU ni reloj
+│   │   ├── src/
+│   │   │   ├── element.rs   # Modelo de escena y serialización JSON .excalidraw
+│   │   │   ├── rough.rs     # Trazos y rellenos hand-drawn deterministas (rough.js)
+│   │   │   ├── freehand.rs  # Contornos de grosor variable (perfect-freehand)
+│   │   │   ├── shape.rs     # Geometría de elementos → operaciones de dibujo
+│   │   │   ├── text.rs      # Fuentes WOFF2, medición, wrapping y glifos
+│   │   │   ├── bound.rs     # Texto ligado dentro de contenedores
+│   │   │   ├── binding.rs   # Flechas ancladas a figuras
+│   │   │   ├── hit.rs       # Hit-testing
+│   │   │   ├── editor.rs    # Herramientas, selección, edición, undo/redo, Frame
+│   │   │   ├── ui.rs        # Barra de herramientas y panel de estilos
+│   │   │   └── export.rs    # Exportación headless a SVG y display list para PNG
+│   │   └── fonts/           # Fuentes WOFF2 embebidas en el binario
+│   └── app/                 # board-app: shell de escritorio (winit + vello/wgpu)
+│       ├── src/
+│       │   ├── main.rs      # Ventana, eventos, portapapeles, diálogos y CLI
+│       │   └── render.rs    # Rasterización GPU con vello y exportación PNG
+│       └── examples/
+│           └── ui_snapshot.rs
+└── samples/
+    └── demo.excalidraw
+```
 
-## Features
+## Características principales
 
-- **Projects and boards**: colored projects, board thumbnails, search and a "recent" view.
-- Rename, duplicate, move between projects, delete, and import/export `.excalidraw` files.
-- **Autosave** to local files, plus a save when you go back to the list or close the window.
-- **Works offline**: Excalidraw's fonts ship with the app instead of loading from a CDN.
-- **Pen pressure**: Chromium passes the tablet's real `PointerEvent.pressure` to Excalidraw,
-  so freehand strokes vary in width. A live pressure meter appears in the editor's top bar
-  as soon as you use a pen.
-- A trimmed-down Excalidraw menu: no collaboration, no "open file", no "save as".
-- Light, dark or system theme.
+- **Renderizado GPU directo:** rasterización de curvas Bézier mediante compute shaders con `vello` (`0.12`) sobre `wgpu`, con caché de geometría por elemento.
+- **Trazos libres con presión real:** contorno de grosor variable (`perfect-freehand`) que registra `pressures` y `simulatePressure` en `.excalidraw`, usando la presión real del lápiz en Wayland (`winit 0.31`) y simulación por velocidad con ratón.
+- **Figuras, texto e imágenes:** rectángulos, rombos, elipses, líneas y flechas multipunto con *bindings*, texto multilínea con fuentes WOFF2 embebidas, etiquetas dentro de figuras, imágenes (`PNG`, `JPEG`, `GIF`, `WebP`, `BMP`), rellenos (`solid`, `hachure`, `cross-hatch`, `zigzag`), rugosidad, esquinas redondeadas, rotación, paleta de colores y orden de capas.
+- **Interoperabilidad `.excalidraw`:** abre, edita y guarda archivos `.excalidraw` preservando campos desconocidos, copia/pega en formato Excalidraw y exporta a SVG y PNG desde línea de comandos.
 
-The interface is in Spanish for now. Translations are a welcome contribution.
-
-## Project status
-
-This is a working base meant to be forked and extended. It is built and tested on **Linux**
-(Arch, Wayland/niri). Electron runs on Windows and macOS too, but the build config and
-testing currently cover Linux only.
-
-## Getting started
-
-Requires Node ≥ 20.19 and [pnpm](https://pnpm.io) (`corepack enable`).
+## Compilar y ejecutar
 
 ```bash
-pnpm install
-pnpm dev            # run with hot reload
-pnpm typecheck
+# Ejecutar la aplicación (lienzo vacío)
+cargo run --release -p board-app
+
+# Abrir un archivo .excalidraw
+cargo run --release -p board-app -- samples/demo.excalidraw
+
+# Exportación headless a SVG / PNG
+cargo run --release -p board-app -- samples/demo.excalidraw --svg salida.svg --png salida.png
+
+# Generar captura de la interfaz sin abrir ventana
+cargo run -p board-app --example ui_snapshot -- docs/screenshots/editor-ui.png
+
+# Ejecutar tests del núcleo
+cargo test -p board-core
 ```
-
-### Building
-
-```bash
-pnpm dist           # AppImage + pacman package in dist/
-pnpm dist:dir       # unpacked build only (faster)
-pnpm install:local  # build and install for the current user (Linux, no root)
-```
-
-`install:local` copies the app to `~/.local/opt/boards` and creates the `boards` command
-(`~/.local/bin`), a `boards.desktop` entry and icons under `~/.local/share`. The window
-identifies itself as `boards` (Wayland app_id / X11 WM_CLASS), so taskbars and launchers
-match it to its icon. Run it again after making changes.
-
-## Where your data lives
-
-Everything is stored in `~/.config/Boards/workspace/` (the "Carpeta de datos" button opens it):
-
-```
-workspace.json             project and board index
-boards/<id>.excalidraw     scenes, in the standard Excalidraw format
-thumbnails/<id>.png        board previews
-library.excalidrawlib      shape library
-```
-
-Board files open as-is on [excalidraw.com](https://excalidraw.com).
-
-## Pen pressure on Wayland
-
-Electron runs natively on Wayland, where pen pressure depends on the compositor's tablet
-protocol support. If the pressure meter doesn't appear or stays still, run the app under
-XWayland, where pressure goes through XInput2:
-
-```bash
-BOARDS_FORCE_X11=1 boards   # installed app
-pnpm dev:x11                # development
-```
-
-## Customizing
-
-The app's own code is small (~1,700 lines of TypeScript). Good places to start:
-
-| You want to… | Look at |
-| --- | --- |
-| Show or hide Excalidraw features and menu items | `UIOptions` and `<MainMenu>` in `src/renderer/src/components/BoardEditor.tsx` |
-| Change autosave or thumbnail behavior | `save` / `handleChange` in `BoardEditor.tsx` |
-| Change how projects and boards are stored | `src/main/store.ts` |
-| Add an operation the UI can call | `BoardsApi` in `src/shared/types.ts`, then `src/preload/index.ts` and `registerIpc()` in `src/main/index.ts` |
-| Restyle the project manager | `src/renderer/src/styles.css` (CSS variables at the top) |
-
-```
-src/main/        main process: window, app:// protocol, IPC, storage
-src/preload/     secure bridge (contextBridge) exposed as window.boards
-src/renderer/    React: project manager and editor
-src/shared/      shared types
-resources/       app icon (icon.svg is the source)
-scripts/         font copy, license generation, local install
-```
-
-The UI is served from a custom `app://` protocol, with a strict Content Security Policy
-in production builds. The renderer runs sandboxed with context isolation, and links open
-in the system browser.
-
-To regenerate the icon PNGs after editing `resources/icon.svg`:
-
-```bash
-for n in 16 24 32 48 64 128 256 512; do rsvg-convert -w $n -h $n resources/icon.svg -o resources/icons/${n}x${n}.png; done
-cp resources/icons/512x512.png resources/icon.png
-```
-
-## License
-
-[MIT](LICENSE). Boards is an independent project and is not affiliated with Excalidraw.
-Third-party code and fonts are credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md);
-full license texts for every bundled library are in
-[THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt), regenerated on each build.

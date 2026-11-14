@@ -1,12 +1,5 @@
-# Dependencies
-node_modules/
-
-# Build output
-out/
-dist/
-
-# Copied from @excalidraw/excalidraw at build time (pnpm fonts)
-src/renderer/public/fonts/
+# Rust build output
+/target/
 
 # Logs and local files
 *.log
