@@ -1,4 +1,4 @@
-# Boardraw
+# LittleDraw
 
 > **Motor basado en Excalidraw:** Este proyecto es un motor de dibujo vectorial nativo en **Rust** basado en [Excalidraw](https://github.com/excalidraw/excalidraw) (MIT). Reproduce su diseño, estética *hand-drawn*, comportamiento de herramientas y compatibilidad con el formato `.excalidraw`, portando algoritmos de [rough.js](https://github.com/rough-stuff/rough) y [perfect-freehand](https://github.com/steveruizok/perfect-freehand) para ejecutarse directamente en GPU sin navegador, Electron ni Chromium.
 
