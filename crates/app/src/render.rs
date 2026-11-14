@@ -38,6 +38,27 @@ impl Images {
             .or_insert_with(|| decode_data_url(files[file_id]["dataURL"].as_str()?))
             .as_ref()
     }
+
+    pub fn insert_png(&mut self, key: String, bytes: &[u8]) {
+        if let Ok(img) = image::load_from_memory(bytes) {
+            let pixels = img.into_rgba8();
+            let (width, height) = pixels.dimensions();
+            self.decoded.insert(
+                key,
+                Some(ImageData {
+                    data: Blob::new(Arc::new(pixels.into_raw())),
+                    format: ImageFormat::Rgba8,
+                    alpha_type: ImageAlphaType::Alpha,
+                    width,
+                    height,
+                }),
+            );
+        }
+    }
+
+    pub fn remove(&mut self, key: &str) {
+        self.decoded.remove(key);
+    }
 }
 
 /// Decodes a `data:<mime>;base64,...` URL holding a PNG, JPEG, GIF, WebP
@@ -183,4 +204,81 @@ pub fn write_png(frame: &Frame, width: u32, height: u32, files: &Value, out: &Pa
     }
     writer.finish()?;
     Ok(())
+}
+
+/// Renders `frame` into PNG bytes using an existing GPU device and renderer.
+pub fn render_to_png_bytes(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    renderer: &mut Renderer,
+    frame: &Frame,
+    width: u32,
+    height: u32,
+    files: &Value,
+) -> Result<Vec<u8>, Box<dyn Error>> {
+    let limit = device.limits().max_texture_dimension_2d;
+    if width == 0 || height == 0 || width > limit || height > limit {
+        return Err(format!("invalid thumbnail dimensions {width}×{height}").into());
+    }
+    let mut scene = Scene::new();
+    let viewport = Rect::new(0.0, 0.0, f64::from(width), f64::from(height));
+    encode(&mut scene, frame, 1.0, viewport, &mut Images::default(), files);
+    let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: None,
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let params = RenderParams {
+        base_color: to_peniko(frame.background),
+        width,
+        height,
+        antialiasing_method: AaConfig::Area,
+    };
+    renderer.render_to_texture(
+        device,
+        queue,
+        &scene,
+        &texture.create_view(&wgpu::TextureViewDescriptor::default()),
+        &params,
+    )?;
+
+    let row = width * 4;
+    let padded = row.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: u64::from(padded) * u64::from(height),
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    encoder.copy_texture_to_buffer(
+        texture.as_image_copy(),
+        wgpu::TexelCopyBufferInfo {
+            buffer: &buffer,
+            layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(padded), rows_per_image: None },
+        },
+        size,
+    );
+    queue.submit([encoder.finish()]);
+    buffer.map_async(wgpu::MapMode::Read, .., |result| result.expect("failed to read back thumbnail"));
+    device.poll(wgpu::PollType::wait_indefinitely())?;
+    let data = buffer.get_mapped_range(..)?;
+
+    let mut tight = Vec::with_capacity((row * height) as usize);
+    for line in data.chunks(padded as usize) {
+        tight.extend_from_slice(&line[..row as usize]);
+    }
+    let mut out = Vec::new();
+    let mut png = png::Encoder::new(&mut out, width, height);
+    png.set_color(png::ColorType::Rgba);
+    let mut writer = png.write_header()?;
+    writer.write_image_data(&tight)?;
+    writer.finish()?;
+    Ok(out)
 }
