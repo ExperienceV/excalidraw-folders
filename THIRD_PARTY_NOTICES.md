@@ -40,3 +40,27 @@ Copyright holders and reserved font names are listed in each font's upstream pro
 The desktop runtime is [Electron](https://www.electronjs.org/) (MIT), which embeds Chromium.
 Their licenses are distributed next to the app binary as `LICENSE.electron.txt` and
 `LICENSES.chromium.html`.
+
+## Native engine (`native/`, `native-engine` branch)
+
+The experimental Rust engine does not bundle Excalidraw or Electron. Its hand-drawn stroke
+and hachure generation (`native/crates/core/src/rough.rs`) is adapted from the algorithms of
+[rough.js](https://github.com/rough-stuff/rough), Copyright (c) 2019 Preet Shihn, MIT License.
+Text measuring, wrapping, label placement and arrow bindings (`text.rs`, `bound.rs`,
+`binding.rs`) are ported from
+[Excalidraw](https://github.com/excalidraw/excalidraw), Copyright (c) 2020 Excalidraw, MIT
+License. It reads and writes Excalidraw's `.excalidraw` file format.
+
+`native/crates/core/fonts/` holds unmodified copies of the WOFF2 files distributed with
+`@excalidraw/excalidraw` for Excalifont, Virgil, Nunito, Lilita One, Cascadia Code and
+Liberation Sans (SIL OFL 1.1, see [licenses/OFL-1.1.txt](licenses/OFL-1.1.txt)) and Comic
+Shanns (MIT). They are embedded in the binary.
+
+It is built on Rust crates including [vello](https://github.com/linebender/vello),
+[kurbo](https://github.com/linebender/kurbo) and [wgpu](https://github.com/gfx-rs/wgpu)
+(Apache-2.0 OR MIT), [skrifa](https://github.com/googlefonts/fontations) (Apache-2.0 OR MIT),
+[wuff](https://crates.io/crates/wuff) (MIT), [arboard](https://github.com/1Password/arboard)
+(Apache-2.0 OR MIT), [image](https://github.com/image-rs/image) (Apache-2.0 OR MIT),
+[rfd](https://github.com/PolyMeilex/rfd) (MIT), [winit](https://github.com/rust-windowing/winit) (Apache-2.0) and
+[serde](https://github.com/serde-rs/serde) (Apache-2.0 OR MIT); `native/Cargo.lock` lists
+every dependency.
